@@ -67,7 +67,4 @@ I2C, Speicherverbrauch). Der Code ist Zeile fuer Zeile aus deiner
 bestaetigt funktionierenden main.py portiert, aber ein erster Testlauf auf
 dem Pico bleibt trotzdem noetig.
 
-## Bei Problemen
-Falls beim ersten Start ein `ImportError` oder `AttributeError` auftaucht,
-schick mir die genaue Fehlermeldung - die verrät sofort, welches Modul
-betroffen ist.
+Disclaimer: Diese .md ist von K.I. erstellt.
