@@ -1,8 +1,22 @@
-# Pico-environment
-Sensors with the Raspberry Pi PICO (W)
+# Description of my BME690 Sensor Project
+Sensor working with the Raspberry Pi PICO2 (W)
+and pimoroni Micropython
 
-As the Pico is a tiny little Programmable Board,
-my Goal is to program some microPython Code to
-readout these Sensors.
-Here i post my progress and share the most
-functional parts...
+Parts-List:
+
+Bosch BME690
+see Datasheet at
+
+https://www.bosch-sensortec.com/en/products/environmental-sensors/gas-sensors/bme690#technical
+
+Raspberry Pico 2W
+see Specs at
+
+https://pip-assets.raspberrypi.com/categories/1088-raspberry-pi-pico-2-w/documents/RP-008304-DS-3-pico-2-w-datasheet.pdf
+
+Waveshare WS 19653
+
+0,96 Zoll LCD Display Modul, 65K Farben, 160x80, SPI
+- see Specs at
+
+https://www.waveshare.com/wiki/Pico-LCD-0.96
