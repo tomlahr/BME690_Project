@@ -20,3 +20,5 @@ Waveshare WS 19653
 - see Specs at
 
 https://www.waveshare.com/wiki/Pico-LCD-0.96
+
+The hardware is relatively easy to put together; experience in soldering is an advantage...
