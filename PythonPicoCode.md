@@ -1,6 +1,12 @@
-# PicoBME690 - Modulare Struktur
+# PicoBME690 - Modulare Wetterstation
+
+Raspberry Pi Pico + Waveshare LCD-0.96 + Bosch BME690 (Temperatur, Luftfeuchte,
+Luftdruck, Gaswiderstand/IAQ). MicroPython, kein externes Framework - reine
+Standardbibliothek (`machine`, `framebuf`, `network`, `socket`) plus Pimoronis
+`breakout_bme69x`-Treiber.
 
 ## Dateien -> Pico
+
 Alle zehn Dateien flach ins Wurzelverzeichnis kopieren, keine Unterordner:
 
     config.py
@@ -15,56 +21,137 @@ Alle zehn Dateien flach ins Wurzelverzeichnis kopieren, keine Unterordner:
     main.py
 
 **Falls du schon eine eigene `secrets.py` auf dem Pico hast: nicht mit der
-hier beigelegten Platzhalter-Version ueberschreiben.**
+hier beigelegten Platzhalter-Version überschreiben.**
 
-## Was neu ist gegenueber der letzten main.py
+## Architektur: state.py als gemeinsamer Zustand
 
-1. **Modulare Aufteilung** - siehe Tabelle unten. Verhalten ist unveraendert,
-   nur ueber mehrere Dateien verteilt.
-2. **Selbsttest um T/P/H erweitert.** Bisher pruefte `update_selftest()` nur
-   Heizerstabilitaet + Gaswert-Gueltigkeit + Gaswiderstand-Plausibilitaet.
-   Jetzt zusaetzlich: Temperatur, Druck und Feuchte muessen in einer
-   plausiblen Spanne liegen (siehe `config.py`, `TEMP_MIN_C` etc.) - nach
-   dem Vorbild von Boschs eigenem `analyze_sensor_data()` in `bme69x.c`.
-   **Wichtig:** Diese Grenzen sind selbst gewaehlte, grosszuegige
-   Plausibilitaetswerte ("Sensor komplett kaputt/getrennt erkennen"),
-   NICHT Boschs exakte interne Konstanten - die stehen in `bme69x_defs.h`,
-   die mir nicht vorliegt.
+Eine monolithische `main.py` kann alle Messwerte als einfache globale
+Variablen halten, weil dort auch alle Funktionen sitzen, die per `global`
+draufzugreifen. Über mehrere Dateien verteilt gibt's kein gemeinsames
+"global" mehr. Lösung: `state.py` hält nur die gemeinsamen Werte
+(`last_temp`, `min_gas`, `wifi_active`, `screensaver_active`, ...), alle
+anderen Module lesen/schreiben direkt `state.last_temp = ...` statt
+`global last_temp` zu deklarieren.
 
-## Architektur-Loesung: state.py
+## Zuordnung der Module
 
-Dein Original hielt alle Messwerte als globale Variablen in einer Datei -
-das geht nur, weil dort auch alle Funktionen sitzen, die per `global`
-draufzugreifen. Ueber mehrere Dateien verteilt, gibt's kein gemeinsames
-"global" mehr. Loesung: `state.py` haelt nur die gemeinsamen Werte
-(`last_temp`, `min_gas`, `wifi_active`, ...), alle anderen Module lesen/
-schreiben direkt `state.last_temp = ...` statt `global last_temp` zu
-deklarieren. Kein Verhaltensunterschied, nur die Art, wie der Zustand
-zwischen Dateien geteilt wird.
+| Bereich                                                      | Datei          |
+|---------------------------------------------------------------|----------------|
+| Konstanten (Pins, Offsets, Intervalle, Selbsttest-Grenzen)     | `config.py`    |
+| Farbkonstanten                                                 | `colors.py`    |
+| Gemeinsamer Zustand (`last_temp`, `wifi_active`, ...)          | `state.py`     |
+| Verlauf, Trends (`record_history`, `linreg_change`, `trend_acceleration`, `uptime`) | `history.py` |
+| Sensor-Lesen, Selbsttest, IAQ, Wettertrend (`update_sensor`, `update_selftest`, `pressure_swing`, ...) | `sensors.py` |
+| LCD-Treiber, Bildschirmaufbau, Bildschirmschoner (`draw`, `draw_screensaver`) | `display.py` |
+| Web-Dashboard (`html_page`, `json_data`, Chart-HTML)           | `web.py`       |
+| WLAN an/aus, Webserver-Polling                                 | `wifi.py`      |
+| Tasten, Initialisierung, Hauptschleife                         | `main.py`      |
 
-## Zuordnung alt -> neu
+## Funktionsumfang
 
-| Aus der alten main.py                                    | Jetzt in       |
-|------------------------------------------------------------|----------------|
-| Konstanten (Pins, Offsets, Intervalle, MODE_NAMES)          | `config.py`    |
-| Farbkonstanten                                              | `colors.py`    |
-| Globale Messwerte/Zustand (`last_temp`, `wifi_active`, ...)  | `state.py`     |
-| `record_history`, `delta_from_history`, `signed_value`, `uptime` | `history.py` |
-| `update_sensor`, `update_selftest`, `selftest_text`, `internal_temp`, `iaq_relative`, `comfort_text`, `gas_status_text`, `pressure_trend`, `weather_trend` | `sensors.py` |
-| `LCD_0inch96`, `draw`                                       | `display.py`   |
-| `html_page`, `json_data`, `sparkline`, `iaq_overlay`, `chart_card`, `pressure_chart`, `gas_chart`, `send_all`, `send_response`, `handle_request` | `web.py` |
-| `toggle_wifi`, `poll_server`                                | `wifi.py`      |
-| Tasten, Initialisierung, Hauptschleife                      | `main.py`      |
+### Sensorik & Kalibrierung
+- BME690 im Forced Mode, IIR-Filter aktiv (`FILTER_COEFF_3`, damit volle
+  20-Bit-Auflösung statt der niedrigeren Auflösung ohne Filter).
+- Oversampling bewusst asymmetrisch: Feuchte 16x, Druck 1x (zugunsten der
+  Feuchtegenauigkeit) - dadurch spürbar mehr Rohrauschen beim Druck, siehe
+  Wettertrend unten.
+- Additive Offsets für Temperatur, Feuchte und Druck (`config.TEMP_OFFSET`,
+  `HUMIDITY_OFFSET`, `PRESSURE_OFFSET`) - Beispielwerte aus Vergleichsmessungen
+  gegen eine externe Referenz an einem konkreten Gerät. **Für dein eigenes
+  Exemplar neu ermitteln**, nicht ungeprüft übernehmen.
+
+### Selbsttest-Näherung
+Boschs eigener Selbsttest prüft u.a. den internen Heizstrom-Regelwert
+(`idac`) - der ist über Pimoronis MicroPython-Treiber nicht zugänglich
+(bestätigt: weder `bme.read()` noch `bme.configure()` geben ihn her, und der
+Treiber hat keine Methode für rohen Registerzugriff). Stattdessen prüft
+`update_selftest()`:
+- Heizerstabilität + Gaswert-Gültigkeit (`STATUS_HEATER_STABLE`/`STATUS_GAS_VALID`)
+- Plausibilitätsspannen für alle vier Messgrößen (`TEMP_MIN_C`/`MAX_C`,
+  `PRES_MIN_HPA`/`MAX_HPA`, `HUM_MIN_PCT`/`MAX_PCT`, `GAS_MIN_KOHM`/`MAX_KOHM`)
+
+**Wichtig:** Diese Grenzen sind selbst gewählte, großzügige
+Plausibilitätswerte ("Sensor komplett kaputt/getrennt erkennen"), NICHT
+Boschs exakte interne Konstanten (die stehen in `bme69x_defs.h`, die nicht
+Teil dieses Treibers ist).
+
+### Wettertrend - robuste Trendberechnung
+Ein einfacher Zwei-Punkt-Vergleich ("jetzt minus vor 30 Minuten") reagiert
+empfindlich auf einzelne verrauschte Messwerte - besonders relevant hier,
+weil Druck nur mit 1x Oversampling läuft. Stattdessen legt
+`history.linreg_change()` eine Kleinste-Quadrate-Ausgleichsgerade durch alle
+Punkte im Fenster; ein einzelner Ausreißer an einem Rand wird dadurch
+automatisch heruntergewichtet, statt die ganze Aussage zu kippen.
+
+Zusätzlich ein Frühwarn-Signal ("Anklopfen"): `history.trend_acceleration()`
+vergleicht die Steigung der jüngsten `PRESSURE_SWING_MINUTES_NEW` Minuten
+(Standard: 10) gegen die davorliegenden `PRESSURE_SWING_MINUTES_OLD` Minuten
+(Standard: 20) - ein beginnender Umschwung zeigt sich hier oft, bevor er im
+langen 30-Minuten-Gesamttrend sichtbar wird. Auf dem LCD als einfacher
+ASCII-Pfeil (`^`/`v`) neben der Luftdruckzeile, im Web-Dashboard als
+Icon+Pfeil-Banner oberhalb der Luftqualitäts-Kachel.
+
+Alle Schwellenwerte hierfür (`PRESSURE_SWING_THRESHOLD` etc.) sind selbst
+gewählte Startwerte, noch nicht gegen viele echte Wetterwechsel kalibriert.
+
+### Bildschirmschoner
+Nach `SCREENSAVER_IDLE_MS` (Standard: 5 Minuten) ohne Tastendruck dimmt das
+Display auf `SCREENSAVER_BRIGHTNESS` (~20 %) und zeigt einen horizontal
+wandernden "Scanner" mit verblassendem Schweif (5 Segmente, angelehnt an die
+K.I.T.T.-Lauflicht-Optik) statt komplett dunkel zu bleiben. **Jede** Taste
+weckt auf; der weckende Tastendruck selbst löst keine Aktion aus (kein
+versehentlicher Seitenwechsel o.ä. beim blinden Hinschauen). Sensor-Lesen,
+Verlaufsaufzeichnung und Webserver laufen währenddessen unverändert weiter.
+
+Tempo und Segmentzahl sind über `SCREENSAVER_STEP_MS`/`_STEP_PX` und den
+Farbverlauf in `display.draw_screensaver()` direkt anpassbar. Aus Farben
+verwendet die Animation bewusst nur bereits vorhandene, bestätigt
+funktionierende Konstanten aus `colors.py` (`RED`, `LIGHTRED`, `GREY`) statt
+neu berechneter Zwischentöne.
+
+### Web-Dashboard
+- `/` liefert das vollständige HTML-Dashboard (Karten, Sparklines,
+  Luftqualitäts-Skala, Wettertrend-Banner), `/data` ein JSON mit den
+  aktuellen Werten (alle 5 s per JS abgerufen), `/history` (falls aktiv)
+  die Verlaufsreihen für die Diagramme.
+- Kartenhöhen (Sparkline-Karten vs. die höhere Gaswiderstand/IAQ-Karte)
+  gleichen sich über CSS Flexbox an; die Höhe der Gas-Trendbox wird zusätzlich
+  per kleinem JavaScript beim Laden von der Luftdruck-Karte übernommen
+  (`syncGasBoxHeight()`) - robuster als reine CSS-Anpassung, da Grid+Flex in
+  verschachtelten Containern nicht immer intuitiv reagiert.
+- Fußzeile zeigt zusätzlich die grob geschätzte interne Pico-Temperatur
+  (`sensors.internal_temp()`, RP2040-Onboard-Sensor - nur zur groben
+  Einordnung, nicht kalibriert).
+
+## Bekannte Grenzen
+- `idac`/Multi-Stufen-Heizprofile (Bosch "Parallel Mode", bis zu 10
+  Heizstufen pro Zyklus) sind über diesen Treiber nicht nutzbar - bestätigt
+  per REPL, weder als Modul-Konstante noch als `read()`-Parameter vorhanden.
+  Für Details siehe die BME688/BME690-Datenblätter, Abschnitt "Parallel Mode"
+  bzw. Register `idac_heat_x`.
+- Kalibrierwerte (Offsets, Selbsttest-Grenzen, Trend-Schwellen) sind alle an
+  einem konkreten Gerät gegen eine externe Referenz (SwitchBot-Sensor, DWD-
+  Luftdruckdaten) ermittelt - für ein anderes Exemplar als Ausgangspunkt
+  brauchbar, aber nicht blind übernehmen.
 
 ## Verifiziert vor der Auslieferung
-- Alle zehn Dateien einzeln mit `py_compile` auf Syntaxfehler geprueft.
+- Alle zehn Dateien einzeln mit `py_compile` auf Syntaxfehler geprüft.
 - Ein Skript hat jede `modul.name`-Referenz (z.B. `state.last_temp`,
-  `config.HEATER_TEMP`) gegen die tatsaechliche Definition im Zielmodul
-  abgeglichen - keine Tippfehler oder fehlenden Namen gefunden.
+  `config.HEATER_TEMP`) gegen die tatsächliche Definition im Zielmodul
+  abgeglichen - keine Tippfehler oder fehlenden Namen.
+- Die Trend-Formeln (lineare Regression, Anklopf-Vergleich) mit
+  synthetischen Testreihen gegengerechnet, nicht nur auf dem Papier
+  hergeleitet.
 
-**Was ich NICHT pruefen kann:** Echtes Verhalten auf der Hardware (Timing,
-I2C, Speicherverbrauch). Der Code ist Zeile fuer Zeile aus deiner
-bestaetigt funktionierenden main.py portiert, aber ein erster Testlauf auf
-dem Pico bleibt trotzdem noetig.
+**Was nicht vorab geprüft werden konnte:** Echtes Verhalten auf der Hardware
+(Timing, I2C, Speicherverbrauch, tatsächliches Seitenlayout im Browser). Der
+Code ist Zeile für Zeile aus einer bestätigt funktionierenden Basis portiert
+bzw. inkrementell erweitert, aber einige Feinheiten (v.a. die CSS/JS-Layout-
+Angleichung der Dashboard-Kacheln) brauchten mehrere Runden mit echten
+Foto-/Screenshot-Rückmeldungen, bis Höhen und Ausrichtung tatsächlich
+passten - ohne direkten Zugriff auf Display oder Browser ist das am Ende
+immer ein Zusammenspiel aus Code und Praxistest, nicht reine Theorie.
 
-Disclaimer: Diese .md ist von K.I. erstellt.
+Disclaimer: Diese Datei ist mit Unterstützung eines KI-Assistenten (Claude,
+Anthropic) entstanden und wurde iterativ gegen echtes Hardware-Feedback
+abgeglichen.
