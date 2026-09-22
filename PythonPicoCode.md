@@ -75,24 +75,43 @@ Plausibilitätswerte ("Sensor komplett kaputt/getrennt erkennen"), NICHT
 Boschs exakte interne Konstanten (die stehen in `bme69x_defs.h`, die nicht
 Teil dieses Treibers ist).
 
-### Wettertrend - robuste Trendberechnung
-Ein einfacher Zwei-Punkt-Vergleich ("jetzt minus vor 30 Minuten") reagiert
-empfindlich auf einzelne verrauschte Messwerte - besonders relevant hier,
-weil Druck nur mit 1x Oversampling läuft. Stattdessen legt
+### Wettertrend - 3-Stunden-Drucktendenz
+Der Haupttrend ist die "3-Stunden-Drucktendenz" - in der Meteorologie ein
+Standardbegriff (z.B. so in METAR-/SYNOP-Meldungen verwendet: die Änderung
+des Luftdrucks über die letzten drei Stunden). Ein einfacher Zwei-Punkt-
+Vergleich ("jetzt minus vor 3 Stunden") reagiert allerdings empfindlich auf
+einzelne verrauschte Messwerte an den Fensterrändern - besonders relevant
+hier, weil Druck nur mit 1x Oversampling läuft. Stattdessen legt
 `history.linreg_change()` eine Kleinste-Quadrate-Ausgleichsgerade durch alle
-Punkte im Fenster; ein einzelner Ausreißer an einem Rand wird dadurch
-automatisch heruntergewichtet, statt die ganze Aussage zu kippen.
+Punkte im Fenster (`config.PRESSURE_TREND_WINDOW_MIN`, Standard: 180 Minuten
+= die volle Ringpuffer-Länge); ein einzelner Ausreißer an einem Rand wird
+dadurch automatisch heruntergewichtet, statt die ganze Aussage zu kippen.
+
+**Schwellenwert** (`config.PRESSURE_TREND_THRESHOLD`, Standard: 1,5 hPa über
+das volle Fenster): Quellen dazu gehen weit auseinander - von ~0,8 hPa/3h
+(eine Home-Assistant-DIY-Anleitung für Hobby-Sensoren, mit dem Hinweis
+"Startwert, keine Naturkonstante") bis ~3 hPa/3h (verbreiteter Seefahrt-/
+Flugwetter-Schwellenwert für "Sturmwarnung/Frontdurchgang"). 1,5 hPa liegt
+bewusst dazwischen - strenger als der twitchy DIY-Wert, weit unter der
+Sturmwarnschwelle. Wie bei den anderen Kalibrierwerten in diesem Projekt:
+ein Startwert, keine hergeleitete Konstante.
+
+**Konsequenz aus der 3-Stunden-Fensterlänge:** Der Ringpuffer fasst genau
+181 Punkte (`HISTORY_SIZE`) - der Trend zeigt entsprechend die ersten rund
+drei Stunden nach jedem Boot "warte auf Trenddaten", nicht wie bei einem
+kürzeren Fenster nach wenigen Minuten. Unvermeidlich bei einer echten
+3-Stunden-Kennzahl.
 
 Zusätzlich ein Frühwarn-Signal ("Anklopfen"): `history.trend_acceleration()`
 vergleicht die Steigung der jüngsten `PRESSURE_SWING_MINUTES_NEW` Minuten
 (Standard: 10) gegen die davorliegenden `PRESSURE_SWING_MINUTES_OLD` Minuten
 (Standard: 20) - ein beginnender Umschwung zeigt sich hier oft, bevor er im
-langen 30-Minuten-Gesamttrend sichtbar wird. Auf dem LCD als einfacher
-ASCII-Pfeil (`^`/`v`) neben der Luftdruckzeile, im Web-Dashboard als
+3-Stunden-Gesamttrend sichtbar wird. Auf dem LCD als einfacher ASCII-Pfeil
+(`^`/`v`) neben der Luftdruckzeile, im Web-Dashboard als zentriertes
 Icon+Pfeil-Banner oberhalb der Luftqualitäts-Kachel.
 
-Alle Schwellenwerte hierfür (`PRESSURE_SWING_THRESHOLD` etc.) sind selbst
-gewählte Startwerte, noch nicht gegen viele echte Wetterwechsel kalibriert.
+`PRESSURE_SWING_THRESHOLD` ist ebenfalls ein selbst gewählter Startwert,
+noch nicht gegen viele echte Wetterwechsel kalibriert.
 
 ### Bildschirmschoner
 Nach `SCREENSAVER_IDLE_MS` (Standard: 5 Minuten) ohne Tastendruck dimmt das
