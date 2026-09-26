@@ -15,6 +15,7 @@ It measures temperature, humidity, air pressure and gas resistance, shows the va
 - [Controls](#controls)
 - [Calibration](#calibration)
 - [Files](#files)
+- [Related project](#related-project)
 - [License](#license)
 
 ## Features
@@ -38,8 +39,6 @@ It measures temperature, humidity, air pressure and gas resistance, shows the va
 | Bosch BME690 breakout | I²C, address `0x76` – [product page](https://www.bosch-sensortec.com/en/products/environmental-sensors/gas-sensors/bme690#technical) |
 | Waveshare Pico-LCD-0.96 (WS 19653) | 0.96" LCD, 160×80, ST7735S, SPI, joystick and buttons – [wiki](https://www.waveshare.com/wiki/Pico-LCD-0.96) |
 
-**Firmware:** [Pimoroni MicroPython](https://github.com/pimoroni/pimoroni-pico) for the Pico 2 W (provides the `breakout_bme69x` module).
-
 The hardware is relatively easy to put together; some soldering experience helps.
 
 ## Wiring
@@ -57,8 +56,8 @@ All pin assignments live in [`src/config.py`](src/config.py).
 
 ## Installation
 
-1. Flash Pimoroni MicroPython onto the Pico 2 W.
-2. Copy everything from the [`src`](src) folder to the root of the Pico (e.g. with Thonny).
+1. Flash [Pimoroni MicroPython](https://github.com/pimoroni/pimoroni-pico) for the Pico 2 W (tested with v1.29.0-2). It provides `pimoroni_i2c` and `breakout_bme69x`; these libraries are not part of this repository.
+2. Copy everything from the [`src`](src) folder to the root of the Pico (e.g. with Thonny), no subfolders.
 3. On the Pico, rename `secrets_example.py` to `secrets.py` and enter your Wi-Fi credentials:
 
    ```python
@@ -119,6 +118,10 @@ Findings from comparison measurements:
 | [`secrets_example.py`](src/secrets_example.py) | Template for your Wi-Fi credentials |
 
 The station creates `iaq_baseline.txt` on the Pico by itself; it is not part of this repository.
+
+## Related project
+
+[Pimoroni-EnviroPlus-Board](https://github.com/tomlahr/Pimoroni-EnviroPlus-Board) – indoor environment monitor with the Pimoroni Enviro+ Pack on a Pico W, sharing the same IAQ module.
 
 ## License
 
