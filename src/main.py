@@ -130,6 +130,7 @@ while True:
     wifi.poll_server()
 
     now = time.ticks_ms()
+    history.tick_uptime()
 
     free = gc.mem_free()
     if free < state.min_mem_free:

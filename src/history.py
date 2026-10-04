@@ -102,8 +102,29 @@ def signed_value(value, decimals=1, unit=""):
     return (("%s%%.%df" % (prefix, decimals)) % value) + unit
 
 
+# Laufzeit als Summe kurzer Schritte statt als Differenz zum Boot-Zeitpunkt:
+# ticks_diff() ist nur bis +-2^29 ms (~149 h) eindeutig, danach wurde die
+# Laufzeit negativ. Sekunden + Rest-ms getrennt, damit alles im Small-Int-
+# Bereich bleibt (keine Heap-Allokation pro Schleifenrunde).
+_up_s = 0
+_up_ms = 0
+_up_last = None
+
+
+def tick_uptime():
+    """Jede Schleifenrunde aufrufen."""
+    global _up_s, _up_ms, _up_last
+    now = time.ticks_ms()
+    if _up_last is not None:
+        _up_ms += time.ticks_diff(now, _up_last)
+        if _up_ms >= 1000:
+            _up_s += _up_ms // 1000
+            _up_ms %= 1000
+    _up_last = now
+
+
 def uptime():
-    seconds = time.ticks_diff(time.ticks_ms(), state.boot_time) // 1000
+    seconds = _up_s
 
     return "%02d:%02d:%02d" % (
         seconds // 3600,
