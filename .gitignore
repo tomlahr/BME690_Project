@@ -1,0 +1,10 @@
+# Zugangsdaten, nur auf dem Pico
+secrets.py
+
+# Vom Pico selbst erzeugt
+iaq_baseline.txt
+
+# Systemdateien
+__pycache__/
+Thumbs.db
+desktop.ini
