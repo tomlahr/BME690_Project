@@ -101,11 +101,11 @@ BRIGHTNESS_LEVELS = (300, 600, 1000)
 MODE_NAMES = ("Klima", "Gas / IAQ", "Min / Max", "WLAN", "System")
 
 # ── Bildschirmschoner ──────────────────────────────────────
-SCREENSAVER_IDLE_MS = 5 * 60 * 1000   # 5 Minuten Inaktivitaet
-SCREENSAVER_BRIGHTNESS = 200           # ~20% von 1000
-SCREENSAVER_STEP_MS = 150              # Zeit pro Schritt
-SCREENSAVER_STEP_PX = 3                # Pixel pro Schritt (+50% gegenueber vorher)
-SCREENSAVER_BAR_W = 14                 # Breite des KITT-Scanner-Segments
+# Wechselseite: Uhrzeit, Temperatur, Luftfeuchte, Luftqualitaet - ein Wert gross.
+SCREENSAVER_IDLE_MS = 3 * 60 * 1000   # 3 Minuten ohne Tastendruck
+SCREENSAVER_BRIGHTNESS = BRIGHTNESS_LEVELS[0]   # niedrigste Stufe (300 von 1000)
+SCREENSAVER_PAGE_MS = 4000             # naechste Seite nach 4 s
+SCREENSAVER_REDRAW_MS = 2000           # Wert auf der Seite auffrischen
 
 # ── WLAN ───────────────────────────────────────────────────
 WIFI_HOSTNAME = "PicoBME690Sensor"
@@ -122,6 +122,17 @@ WIFI_COUNTRY_DEFAULT = "DE"
 # WLAN beim Start automatisch einschalten (z. B. im geschlossenen Balkon-
 # Gehaeuse, damit das Geraet nach einem Stromausfall ohne Tastendruck
 # wieder online kommt). Auskommentiert = WLAN startet aus, CTRL schaltet ein.
-# WIFI_AUTOSTART = True
+WIFI_AUTOSTART = True
+# WLAN-Nachtabschaltung (wifi_schedule.py, identisch beim Enviro+). Die
+# FRITZ!Box schaltet ihr WLAN 00:10-05:55 ab; der Pico trennt sich vorher
+# und verbindet sich erst danach wieder. Ortszeit, Fenster ueber Mitternacht
+# ist erlaubt. CTRL setzt den Zeitplan bis zum naechsten Schaltpunkt aus.
+WIFI_OFF_FROM = (0, 0)
+WIFI_OFF_UNTIL = (6, 0)
+# Der Reihe nach probiert. Die FRITZ!Box beantwortet keine NTP-Anfragen
+# (ETIMEDOUT, Zeitserver im Heimnetz nicht aktiv) - deshalb nur der Pool.
+NTP_HOSTS = ("pool.ntp.org",)
+NTP_RESYNC_MS = 6 * 3600 * 1000             # Zeitabgleich alle 6 h
+NTP_RETRY_MS = 60 * 1000                    # nach Fehlschlag in 1 min erneut
 
-# EOF 2026-09-26
+# EOF 2026-11-10

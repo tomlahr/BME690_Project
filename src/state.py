@@ -35,8 +35,8 @@ boot_time = 0
 min_mem_free = 0
 
 screensaver_active = False
-screensaver_x = 0
-screensaver_dir = 1
+screensaver_page = 0      # 0 Uhrzeit, 1 Temperatur, 2 Luftfeuchte, 3 Luftqualitaet
+sched = None              # WifiSchedule aus main.py (liefert die Uhrzeit)
 last_activity = 0
 
 # EOF 2026-09-26

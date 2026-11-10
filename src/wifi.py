@@ -167,6 +167,11 @@ def _disable():
     print("WLAN deaktiviert")
 
 
+def connected():
+    """True, solange der Link steht und der Server laeuft."""
+    return _mode == _CONNECTED
+
+
 def toggle_wifi():
     """Kehrt sofort zurueck - den Verbindungsaufbau erledigt poll()."""
     if state.wifi_active:
@@ -245,4 +250,4 @@ def poll_server():
 
     web.handle_request(conn)
 
-# EOF 2026-09-25
+# EOF 2026-11-10

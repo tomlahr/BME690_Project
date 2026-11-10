@@ -13,6 +13,7 @@ import history
 import sensors
 import display
 import wifi
+import wifi_schedule
 import iaq
 
 # ── Tasten ─────────────────────────────────────────────────────
@@ -65,13 +66,19 @@ last_sensor = time.ticks_add(state.boot_time, -config.SENSOR_INTERVAL_MS)
 last_display = time.ticks_add(state.boot_time, -config.DISPLAY_INTERVAL_MS)
 last_history = time.ticks_add(state.boot_time, -config.HISTORY_INTERVAL_MS)
 last_iaq_save = state.boot_time
+last_page = state.boot_time
 
 # Frueher sammeln statt erst im Notfall
 gc.threshold(gc.mem_free() // 4 + gc.mem_alloc())
 
 state.last_activity = state.boot_time
 
-# Optional: WLAN direkt einschalten (config.WIFI_AUTOSTART, standardmaessig aus)
+sched = wifi_schedule.WifiSchedule(config.WIFI_OFF_FROM, config.WIFI_OFF_UNTIL,
+                                   config.NTP_HOSTS, config.NTP_RESYNC_MS,
+                                   config.NTP_RETRY_MS)
+state.sched = sched      # Uhrzeit fuer den Bildschirmschoner
+
+# Optional: WLAN direkt einschalten (config.WIFI_AUTOSTART)
 if getattr(config, "WIFI_AUTOSTART", False):
     wifi.toggle_wifi()
 
@@ -117,6 +124,7 @@ while True:
         any_key = True
         if not state.screensaver_active:
             wifi.toggle_wifi()
+            sched.manual()      # Eingriff bis zum naechsten Schaltpunkt
             last_display = time.ticks_add(time.ticks_ms(), -config.DISPLAY_INTERVAL_MS)
 
     if any_key:
@@ -128,6 +136,10 @@ while True:
 
     wifi.poll()          # Verbindungsaufbau / Wiederverbindung
     wifi.poll_server()
+
+    action = sched.update(state.wifi_active, wifi.connected())
+    if (action == "off" and state.wifi_active) or (action == "on" and not state.wifi_active):
+        wifi.toggle_wifi()
 
     now = time.ticks_ms()
     history.tick_uptime()
@@ -151,16 +163,18 @@ while True:
 
     if not state.screensaver_active and time.ticks_diff(now, state.last_activity) >= config.SCREENSAVER_IDLE_MS:
         state.screensaver_active = True
-        state.screensaver_x = 0
-        state.screensaver_dir = 1
+        state.screensaver_page = 0
+        last_page = now
+        last_display = time.ticks_add(now, -config.SCREENSAVER_REDRAW_MS)   # sofort zeichnen
         display.lcd.backlight(config.SCREENSAVER_BRIGHTNESS)
 
     if state.screensaver_active:
-        if time.ticks_diff(now, last_display) >= config.SCREENSAVER_STEP_MS:
+        if time.ticks_diff(now, last_page) >= config.SCREENSAVER_PAGE_MS:
+            last_page = now
+            state.screensaver_page = (state.screensaver_page + 1) % 4
+            last_display = time.ticks_add(now, -config.SCREENSAVER_REDRAW_MS)
+        if time.ticks_diff(now, last_display) >= config.SCREENSAVER_REDRAW_MS:
             last_display = now
-            state.screensaver_x += state.screensaver_dir * config.SCREENSAVER_STEP_PX
-            if state.screensaver_x >= display.lcd.width - config.SCREENSAVER_BAR_W or state.screensaver_x <= 0:
-                state.screensaver_dir = -state.screensaver_dir
             display.draw_screensaver()
     else:
         if time.ticks_diff(now, last_display) >= config.DISPLAY_INTERVAL_MS:
@@ -169,4 +183,4 @@ while True:
 
     time.sleep_ms(config.LOOP_SLEEP_MS)
 
-# EOF 2026-09-26
+# EOF 2026-11-11

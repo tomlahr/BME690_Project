@@ -11,6 +11,7 @@ import state
 import colors
 import sensors
 import history
+import wifi_schedule
 
 lcd = None
 
@@ -212,33 +213,98 @@ def draw():
     lcd.show()
 
 
+# ── Bildschirmschoner: Wechselseite mit grosser Schrift ─────
+# Vier Seiten im Wechsel (SCREENSAVER_PAGE_MS): Uhrzeit, Temperatur,
+# Luftfeuchte, Luftqualitaet - ein Wert sehr gross, darunter klein die
+# Beschriftung. framebuf kennt nur die feste 8x8-Schrift. Fuer grosse Zeichen
+# wird jedes Zeichen in einen 8x8-Puffer geschrieben und Pixel fuer Pixel als
+# Quadrat gezeichnet. Gradzeichen (fehlt in der Schrift) und Doppelpunkt
+# (dort 8 Spalten breit, nur 2 belegt) als eigene schmale Muster - sonst
+# passt "12:34" nicht in die groesste Stufe.
+_GLYPH_BUF = bytearray(8)
+_GLYPH = framebuf.FrameBuffer(_GLYPH_BUF, 8, 8, framebuf.MONO_VLSB)
+_NARROW = {
+    "°": (0x02, 0x05, 0x02, 0x00),    # 4 Spalten, Bit 0 = oberste Zeile
+    ":": (0x00, 0x24, 0x24, 0x00),    # Spalten 3-4 der 8x8-Schrift
+}
+_SS_AREA_W = 156                      # Platz fuer den grossen Wert
+_SS_AREA_H = 56
+_SS_LABEL_Y = 64
+
+
+def _glyph_cols(ch):
+    """Spalten eines Zeichens; MONO_VLSB = ein Byte pro Spalte, Bit 0 oben."""
+    narrow = _NARROW.get(ch)
+    if narrow is not None:
+        return narrow
+    _GLYPH.fill(0)
+    _GLYPH.text(ch, 0, 0, 1)
+    return _GLYPH_BUF
+
+
+def _text_w(s, scale):
+    return sum(len(_NARROW[ch]) if ch in _NARROW else 8 for ch in s) * scale
+
+
+def _big_text(s, x, y, color, scale):
+    for ch in s:
+        cols = _glyph_cols(ch)
+        for j in range(len(cols)):
+            v = cols[j]
+            yy = y
+            while v:
+                if v & 1:
+                    lcd.fill_rect(x + j * scale, yy, scale, scale, color)
+                v >>= 1
+                yy += scale
+        x += len(cols) * scale
+
+
+def _fit_lines(text, max_scale):
+    """Groesster Massstab, mit dem text einzeilig oder - an einem Leerzeichen
+    geteilt - zweizeilig in die Wertflaeche passt."""
+    for scale in range(max_scale, 0, -1):
+        if _text_w(text, scale) <= _SS_AREA_W and 8 * scale <= _SS_AREA_H:
+            return [text], scale
+        if " " in text:
+            a, b = text.split(" ", 1)
+            if max(_text_w(a, scale), _text_w(b, scale)) <= _SS_AREA_W \
+                    and 16 * scale + 2 <= _SS_AREA_H:
+                return [a, b], scale
+    return [text], 1
+
+
 def draw_screensaver():
-    """Horizontaler Scanner mit verblassendem Schweif, angelehnt an die
-    K.I.T.T.-Lauflicht-Optik: heller Kopf (RED), vier dahinter verblassende
-    Segmente - bewusst nur bestehende, bestaetigte Farbkonstanten statt neu
-    berechneter Zwischentoene (die letzten beiden Segmente wiederholen GREY,
-    da uns keine weiteren verifizierten, noch dunkleren Rot-/Grautoene
-    vorliegen)."""
-    bar_w = config.SCREENSAVER_BAR_W
-    bar_h = 16
-    y = (lcd.height - bar_h) // 2
-    step = 16  # Versatz zwischen den Schweif-Segmenten
+    page = state.screensaver_page
+    if page == 0:
+        sched = state.sched
+        if sched is not None and sched.synced:
+            lt = wifi_schedule.local_time()
+            val = "%02d:%02d" % (lt[3], lt[4])
+        else:
+            val = "--:--"                 # noch kein Zeitabgleich seit dem Start
+        color, label = colors.WHITE, "Uhrzeit"
+    elif page == 1:
+        val = "--" if state.last_temp is None else "%.1f°" % state.last_temp
+        color, label = colors.AMBER, "Temperatur in °C"
+    elif page == 2:
+        val = "--" if state.last_hum is None else "%.0f%%" % state.last_hum
+        color, label = colors.CYAN, "Luftfeuchte"
+    else:
+        if state.last_gas is None:
+            val, color = "--", colors.GREY
+        else:
+            _, val, color = sensors.iaq_relative(state.last_gas)
+        label = "Luftqualitaet"
 
-    x = state.screensaver_x
-    d = state.screensaver_dir
-
+    lines, scale = _fit_lines(val, 4)
+    h = len(lines) * 8 * scale + (len(lines) - 1) * 2
+    y = (_SS_AREA_H - h) // 2
     lcd.fill(colors.BLACK)
-
-    # Schweif zuerst zeichnen (am weitesten hinten zuerst), Kopf zuletzt -
-    # damit der Kopf bei Ueberlappung immer obenauf sichtbar bleibt.
-    tail_colors = (colors.LIGHTRED, colors.GREY, colors.GREY, colors.GREY)
-    for i in range(4, 0, -1):
-        seg_x = x - d * step * i
-        if 0 <= seg_x <= lcd.width - bar_w:
-            lcd.fill_rect(seg_x, y, bar_w, bar_h, tail_colors[i - 1])
-
-    lcd.fill_rect(x, y, bar_w, bar_h, colors.RED)
-
+    for ln in lines:
+        _big_text(ln, (lcd.width - _text_w(ln, scale)) // 2, y, color, scale)
+        y += 8 * scale + 2
+    _big_text(label, (lcd.width - _text_w(label, 1)) // 2, _SS_LABEL_Y, colors.LIGHTGREY, 1)
     lcd.show()
 
-# EOF 2026-09-24
+# EOF 2026-11-11
