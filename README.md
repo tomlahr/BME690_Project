@@ -21,13 +21,14 @@ It measures temperature, humidity, air pressure and gas resistance, shows the va
 ## Features
 
 - Five LCD pages: Climate, Gas / IAQ, Min / Max, Wi-Fi, System
-- Screensaver with dimmed backlight after 5 minutes of inactivity
+- Screensaver after 3 minutes of inactivity: time, temperature, humidity and air quality in large type, one value every 4 seconds, at the lowest brightness step
 - Web dashboard with live values (updated every 5 s) and 3-hour history charts (SVG)
 - JSON endpoint at `/data` for use in other tools, e.g. Home Assistant
 - Weather trend derived from air pressure (linear regression over 3 hours)
 - Relative air quality (IAQ) from gas resistance, with the baseline stored in flash and a 20-minute warm-up after boot
 - Humidity corrected to the calibrated temperature (Magnus formula) plus sensor trim
 - Wi-Fi with automatic reconnect, status messages and interface reset after repeated failures
+- Wi-Fi switches off at night (00:00–06:00 local time, NTP time with CET/CEST) to match the router's Wi-Fi schedule
 
 **Note on IAQ:** The air quality value is a *relative* score based on the range of gas resistance the sensor has seen recently. It is not Bosch's BSEC IAQ index and does not measure specific gases or CO₂.
 
@@ -67,10 +68,10 @@ All pin assignments live in [`src/config.py`](src/config.py).
    ```
 
    **Never upload your real `secrets.py` to GitHub.**
-4. Restart the Pico and press **CTRL** (joystick push) to turn on Wi-Fi. The IP address appears on the Wi-Fi page and in the REPL.
+4. Restart the Pico. Wi-Fi starts automatically; the IP address appears on the Wi-Fi page and in the REPL.
 5. Open that IP address in a browser to see the dashboard.
 
-To start Wi-Fi automatically at boot, uncomment `WIFI_AUTOSTART = True` in `config.py`. The hostname is set via `WIFI_HOSTNAME` in the same file.
+Wi-Fi starts at boot (`WIFI_AUTOSTART = True` in `config.py`) and switches off between `WIFI_OFF_FROM` and `WIFI_OFF_UNTIL`. The time comes via NTP (`NTP_HOSTS`, default `pool.ntp.org`) as soon as Wi-Fi is connected. Without a valid time the schedule does nothing and Wi-Fi stays on. The hostname is set via `WIFI_HOSTNAME`.
 
 ## Controls
 
@@ -79,7 +80,7 @@ To start Wi-Fi automatically at boot, uncomment `WIFI_AUTOSTART = True` in `conf
 | A / joystick right | next page |
 | B / joystick left | previous page |
 | Joystick up / down | brightness |
-| CTRL (joystick push) | Wi-Fi and web server on/off |
+| CTRL (joystick push) | Wi-Fi and web server on/off; overrides the night schedule until the next switching time |
 
 Status codes on the System page: `ONLINE`, `LINK?` (connecting), `OFFLINE`, or an error:
 `NOAP` network not found, `AUTH` wrong password, `FAIL` rejected, `NOIP` no IP via DHCP.
@@ -96,7 +97,7 @@ The offsets in `config.py` apply to one specific setup, measuring interval and a
 
 Findings from comparison measurements:
 
-- Without a Wi-Fi connection the station reads about 1 °C lower, because the radio chip produces less heat.
+- Without a Wi-Fi connection the station reads about 1 °C lower, because the radio chip produces less heat. With the night schedule this applies every night between 00:00 and 06:00.
 - Direct sunlight and warm surfaces distort every measurement.
 - The sensor runs on a 3-second interval; recalibrate the offset at the final location.
 - Whether the humidity trim works better as a fixed amount or a factor will only become clear in dry heating-season air (35–45 %).
@@ -115,6 +116,7 @@ Findings from comparison measurements:
 | [`colors.py`](src/colors.py) | Colour constants (BGR565) |
 | [`web.py`](src/web.py) | HTML dashboard with SVG charts, JSON endpoint `/data` |
 | [`wifi.py`](src/wifi.py) | Wi-Fi state machine with reconnect and web server polling |
+| [`wifi_schedule.py`](src/wifi_schedule.py) | Night-time Wi-Fi schedule with NTP and CET/CEST (shared with the Enviro+ project) |
 | [`secrets_example.py`](src/secrets_example.py) | Template for your Wi-Fi credentials |
 
 The station creates `iaq_baseline.txt` on the Pico by itself; it is not part of this repository.
