@@ -9,3 +9,6 @@ WIFI_PASSWORD = "YourPassword"
 # Regulatory radio domain for the CYW43 chip (optional).
 # If missing, config.WIFI_COUNTRY_DEFAULT applies.
 WIFI_COUNTRY = "DE"
+
+MQTT_USER = "mqtt_devices"     # Home-Assistant-Benutzer fuer den Mosquitto-Broker
+MQTT_PASSWORD = "YourMqttPassword"
