@@ -3,6 +3,8 @@ secrets.py
 
 # Vom Pico selbst erzeugt
 iaq_baseline.txt
+log.csv
+log.csv.old
 
 # Systemdateien
 __pycache__/
