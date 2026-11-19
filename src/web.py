@@ -9,22 +9,8 @@ import sensors
 import history
 
 
-# Paket 2: Umlaute und Grad-Zeichen im Web-Dashboard. Das LCD bleibt bei
-# ASCII (die eingebaute 8x8-Schrift von framebuf kennt keine Umlaute), deshalb
-# liefern sensors.py-Texte weiter ASCII, und erst hier wird uebersetzt.
-_DE = (
-    ("aufwaermen...", "Aufwärmphase"),
-    ("maessig", "mäßig"),
-    ("gueltig", "gültig"),
-    ("kuehl", "kühl"),
-    ("pruefe", "prüfe"),
-)
-
-
-def _de(text):
-    for ascii_text, german in _DE:
-        text = text.replace(ascii_text, german)
-    return text
+# Umlaute fuer das Dashboard: Tabelle steht in sensors.py (gemeinsam mit MQTT).
+_de = sensors.de
 
 
 def _fmt(number, fmt):
@@ -717,4 +703,4 @@ def handle_request(conn):
         conn.close()
         gc.collect()
 
-# EOF 2026-11-18
+# EOF 2026-11-19
