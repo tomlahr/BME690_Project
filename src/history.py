@@ -98,6 +98,7 @@ def signed_value(value, decimals=1, unit=""):
     if value is None:
         return "--"
 
+    value = round(value, decimals) + 0.0   # + 0.0 macht aus -0.0 eine 0.0
     prefix = "+" if value > 0 else ""
     return (("%s%%.%df" % (prefix, decimals)) % value) + unit
 
@@ -123,6 +124,10 @@ def tick_uptime():
     _up_last = now
 
 
+def uptime_s():
+    return _up_s
+
+
 def uptime():
     seconds = _up_s
 
@@ -132,4 +137,4 @@ def uptime():
         seconds % 60
     )
 
-# EOF 2026-09-23
+# EOF 2026-11-19

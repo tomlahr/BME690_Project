@@ -27,6 +27,18 @@ def _de(text):
     return text
 
 
+def _fmt(number, fmt):
+    return fmt % number if number is not None else "--"
+
+
+_IAQ_COLOR = {
+    "gut": "#2ecc71",
+    "maessig": "#f39c12",
+    "schlecht": "#e74c3c",
+    "sehr schlecht": "#8e44ad",
+}
+
+
 def sparkline(values, color, min_span=0):
     # Paket 2: ganze Historie zeichnen (bis 3 h). Vorher stand hier
     # values[-60:] - das Diagramm zeigte nur die letzte Stunde, obwohl
@@ -101,21 +113,22 @@ def iaq_overlay():
     ) % " ".join(points)
 
 
-def chart_card(title, values, color, unit, decimals=1, min_span=0):
+def chart_card(title, values, color, unit, decimals=1, min_span=0, card_id=""):
+    # card_id: Luftdruck-Karte braucht id="pressure-card" fuer syncGasBoxHeight()
     if values:
-        current = ("%." + str(decimals) + "f") % values[-1]
-        low = ("%." + str(decimals) + "f") % min(values)
-        high = ("%." + str(decimals) + "f") % max(values)
-        summary = "3h: %s bis %s %s" % (low, high, unit)
+        fmt = "%%.%df" % decimals
+        current = fmt % values[-1]
+        summary = "3h: %s bis %s %s" % (fmt % min(values), fmt % max(values), unit)
     else:
         current = "--"
         summary = "Noch keine Verlaufspunkte"
 
-    return """<div class="chart-card">
+    return """<div class="chart-card"%s>
 <div class="chart-head"><span>%s</span><strong>%s %s</strong></div>
 %s
 <div class="chart-footer">%s</div>
 </div>""" % (
+        ' id="%s"' % card_id if card_id else "",
         title,
         current,
         unit,
@@ -124,28 +137,8 @@ def chart_card(title, values, color, unit, decimals=1, min_span=0):
     )
 
 
-def pressure_chart():
-    if state.history_pres:
-        summary = "3h: %.1f bis %.1f hPa" % (min(state.history_pres), max(state.history_pres))
-    else:
-        summary = "Noch keine Verlaufspunkte"
-
-    return """<div class="chart-card" id="pressure-card">
-<div class="chart-head">
-<span>Luftdruck</span>
-<strong>%s hPa</strong>
-</div>
-%s
-<div class="chart-footer">%s</div>
-</div>""" % (
-        "%.0f" % state.last_pres if state.last_pres is not None else "--",
-        sparkline(state.history_pres, "#7fb3d5", 2),
-        summary,
-    )
-
-
 def weather_banner():
-    emoji, text = sensors.weather_trend()
+    emoji, text, trend = sensors.weather_trend()
     swing = sensors.pressure_swing()
     swing_symbol = {"auf": "&#8593;", "ab": "&#8595;"}.get(swing, "&#8212;")
 
@@ -157,7 +150,7 @@ def weather_banner():
         emoji,
         swing_symbol,
         text,
-        sensors.pressure_trend()
+        trend
     )
 
 
@@ -208,9 +201,6 @@ def json_data():
     pres_3h = history.linreg_change(state.history_pres, config.PRESSURE_TREND_WINDOW_MIN)
     gas_10m = history.delta_from_history(state.history_gas, 10)
 
-    def value(number, fmt):
-        return fmt % number if number is not None else "--"
-
     return (
         '{"temp":"%s","hum":"%s","pres":"%s","gas":"%s",'
         '"iaq":"%s","gas_status":"%s","comfort":"%s",'
@@ -218,10 +208,10 @@ def json_data():
         '"hum_trend":"%s","pres_trend":"%s",'
         '"gas_trend":"%s","uptime":"%s"}'
     ) % (
-        value(state.last_temp, "%.1f"),
-        value(state.last_hum, "%.0f"),
-        value(state.last_pres, "%.0f"),
-        value(state.last_gas, "%.0f"),
+        _fmt(state.last_temp, "%.1f"),
+        _fmt(state.last_hum, "%.0f"),
+        _fmt(state.last_pres, "%.0f"),
+        _fmt(state.last_gas, "%.0f"),
         _de(label),
         _de(sensors.gas_status_text()),
         _de(sensors.comfort_text()),
@@ -240,16 +230,6 @@ def html_page():
     else:
         label = "--"
 
-    iaq_color = {
-        "gut": "#2ecc71",
-        "maessig": "#f39c12",
-        "schlecht": "#e74c3c",
-        "sehr schlecht": "#8e44ad"
-    }.get(label, "#888")
-
-    def value(number, fmt):
-        return fmt % number if number is not None else "--"
-
     def minmax(low, high, fmt):
         if low is None:
             return "--"
@@ -259,7 +239,7 @@ def html_page():
     charts = (
         chart_card("Temperatur", state.history_temp, "#f5b041", "°C", 1, 1.0) +
         chart_card("Luftfeuchte", state.history_hum, "#4fc3f7", "%", 0, 4) +
-        pressure_chart() +
+        chart_card("Luftdruck", state.history_pres, "#7fb3d5", "hPa", 1, 2, "pressure-card") +
         gas_chart()
     )
 
@@ -639,14 +619,14 @@ window.addEventListener("resize", syncGasBoxHeight);
 
 </body>
 </html>""" % (
-        iaq_color,
-        value(state.last_temp, "%.1f"),
+        _IAQ_COLOR.get(label, "#888"),
+        _fmt(state.last_temp, "%.1f"),
         minmax(state.min_temp, state.max_temp, "%.1f"),
-        value(state.last_hum, "%.0f"),
+        _fmt(state.last_hum, "%.0f"),
         minmax(state.min_hum, state.max_hum, "%.0f"),
-        value(state.last_pres, "%.0f"),
+        _fmt(state.last_pres, "%.0f"),
         minmax(state.min_pres, state.max_pres, "%.0f"),
-        value(state.last_gas, "%.0f"),
+        _fmt(state.last_gas, "%.0f"),
         minmax(state.min_gas, state.max_gas, "%.0f"),
         weather_banner(),
         _de(label),
@@ -737,4 +717,4 @@ def handle_request(conn):
         conn.close()
         gc.collect()
 
-# EOF 2026-09-26
+# EOF 2026-11-18

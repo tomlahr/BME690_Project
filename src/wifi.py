@@ -5,7 +5,7 @@
 # alten 10-s-Warteschleife. Drei Zustaende:
 #   OFF        - WLAN aus (state.wifi_active == False)
 #   CONNECTING - Verbindung laeuft, alle WIFI_RETRY_MS neuer Versuch
-#   CONNECTED  - verbunden, Webserver-Socket offen
+#   CONNECTED  - verbunden (Webserver-Socket offen, falls WEB_ENABLED)
 # Faellt der Link weg (Router-Neustart), schliesst poll() den verwaisten
 # Server-Socket, verbindet neu und oeffnet danach einen FRISCHEN Socket.
 # Aendert sich die IP ohne Linkverlust, baut poll() den Socket ebenfalls neu.
@@ -22,6 +22,10 @@
 #
 # WLAN-Angleich (2026-09-25): Das Enviro+ arbeitet jetzt nach demselben
 # Muster. Neu hier nur: Meldung, falls der Laendercode nicht greift.
+#
+# Schalter WEB_ENABLED (2026-11-19): Bei False oeffnet poll() keinen
+# Server-Socket, und web.py wird gar nicht erst geladen (spart RAM).
+# CONNECTED heisst dann nur noch "Link steht" - NTP und MQTT laufen weiter.
 
 import network
 import socket
@@ -30,7 +34,8 @@ import time
 import config
 import state
 import secrets
-import web
+
+web = None   # web.py wird nur bei WEB_ENABLED geladen, siehe _open_server()
 
 _OFF = 0
 _CONNECTING = 1
@@ -40,6 +45,7 @@ _mode = _OFF
 _t_connect = 0   # Start des aktuellen Connect-Versuchs
 _t_check = 0     # letzte Linkpruefung
 _fails = 0       # Fehlversuche seit dem letzten Erfolg
+_errors = 0      # Fehlversuche + Verbindungsabbrueche fuer hourlog.py
 _country_reported = False
 
 
@@ -96,7 +102,12 @@ def _close_server():
 
 
 def _open_server():
+    global web
     _close_server()
+    if not config.WEB_ENABLED:
+        return
+    if web is None:
+        web = __import__("web")
     s = socket.socket()
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("", 80))
@@ -157,7 +168,10 @@ def _disable():
     if state.wlan is not None:
         try:
             state.wlan.disconnect()
-            state.wlan.active(False)
+        except Exception:
+            pass
+        try:
+            state.wlan.active(False)   # auch dann, wenn disconnect() scheitert
         except Exception:
             pass
     state.wifi_active = False
@@ -167,8 +181,16 @@ def _disable():
     print("WLAN deaktiviert")
 
 
+def pop_errors():
+    """Fehlerzaehler fuer das Stundenlog lesen und zuruecksetzen."""
+    global _errors
+    n = _errors
+    _errors = 0
+    return n
+
+
 def connected():
-    """True, solange der Link steht und der Server laeuft."""
+    """True, solange der Link steht (und bei WEB_ENABLED der Server laeuft)."""
     return _mode == _CONNECTED
 
 
@@ -183,7 +205,7 @@ def toggle_wifi():
 def poll():
     """Jede Schleifenrunde aufrufen. Prueft den Link hoechstens alle
     WIFI_CHECK_MS - isconnected() ist ein Aufruf an den Funkchip."""
-    global _mode, _t_check, _fails
+    global _mode, _t_check, _fails, _errors
     if _mode == _OFF:
         return
 
@@ -202,12 +224,16 @@ def poll():
                 _mode = _CONNECTED
                 _fails = 0
                 state.wifi_note = ""
-                print("Webserver: http://" + state.ip)
+                if config.WEB_ENABLED:
+                    print("Webserver: http://" + state.ip)
+                else:
+                    print("WLAN: verbunden, IP", state.ip, "(Webserver aus)")
             except Exception as error:
                 # Socket-Fehler: beim naechsten Check erneut versuchen.
                 print("Server-Start fehlgeschlagen:", error)
         elif time.ticks_diff(now, _t_connect) > config.WIFI_RETRY_MS:
             _fails += 1
+            _errors += 1
             short, text = _status_text()
             state.wifi_note = short
             print("WLAN: Versuch", _fails, "erfolglos -", text)
@@ -223,13 +249,14 @@ def poll():
     # _CONNECTED
     if not linked:
         print("WLAN: Verbindung verloren, verbinde neu...")
+        _errors += 1
         _close_server()
         state.ip = None
         _start_connect()
         return
 
     ip = state.wlan.ifconfig()[0]
-    if ip != state.ip or state.server is None:
+    if ip != state.ip or (config.WEB_ENABLED and state.server is None):
         print("WLAN: IP", ip, "- Server-Socket (neu) oeffnen")
         state.ip = ip
         try:
@@ -250,4 +277,4 @@ def poll_server():
 
     web.handle_request(conn)
 
-# EOF 2026-11-10
+# EOF 2026-11-19

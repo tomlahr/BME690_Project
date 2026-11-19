@@ -31,7 +31,6 @@ wifi_note = ""
 
 mode = 0
 brightness_idx = 1
-boot_time = 0
 min_mem_free = 0
 
 screensaver_active = False
@@ -39,4 +38,4 @@ screensaver_page = 0      # 0 Uhrzeit, 1 Temperatur, 2 Luftfeuchte, 3 Luftqualit
 sched = None              # WifiSchedule aus main.py (liefert die Uhrzeit)
 last_activity = 0
 
-# EOF 2026-09-26
+# EOF 2026-11-18

@@ -11,6 +11,7 @@ import state
 import colors
 import sensors
 import history
+import wifi
 import wifi_schedule
 
 lcd = None
@@ -57,12 +58,7 @@ class LCD_0inch96(framebuf.FrameBuffer):
     def data(self, value):
         self.dc(1)
         self.cs(0)
-
-        if isinstance(value, int):
-            self.spi.write(bytes((value,)))
-        else:
-            self.spi.write(value)
-
+        self.spi.write(value)
         self.cs(1)
 
     def backlight(self, value):
@@ -116,10 +112,7 @@ class LCD_0inch96(framebuf.FrameBuffer):
         self.data(b"\x00\x1A\x00\x69")
 
         self.cmd(0x2C)
-        self.dc(1)
-        self.cs(0)
-        self.spi.write(self.buffer)
-        self.cs(1)
+        self.data(self.buffer)
 
     def text_right(self, text, y, color, right=155):
         self.text(text, right - len(text) * 8, y, color)
@@ -175,13 +168,15 @@ def draw():
             lcd.text(fmt % low, 70, y, low_color)
             lcd.text(fmt % high, 115, y, high_color)
 
-            if label == "Druck":
-                swing_char = {"auf": "^", "ab": "v"}.get(sensors.pressure_swing(), "")
-                if swing_char:
-                    lcd.text(swing_char, 55, y, colors.WHITE)
+        # "Anklopfen" als Pfeil in der Druck-Zeile
+        swing = sensors.pressure_swing()
+        if swing == "auf":
+            lcd.text("^", 55, 52, colors.WHITE)
+        elif swing == "ab":
+            lcd.text("v", 55, 52, colors.WHITE)
 
     elif state.mode == 3:
-        connected = state.wifi_active and state.wlan is not None and state.wlan.isconnected()
+        connected = wifi.connected()   # Zustand aus wifi.poll(), kein Chip-Aufruf
 
         lcd.text("Status", 5, 20, colors.LIGHTGREY)
         lcd.text_right(
@@ -230,6 +225,7 @@ _NARROW = {
 _SS_AREA_W = 156                      # Platz fuer den grossen Wert
 _SS_AREA_H = 56
 _SS_LABEL_Y = 64
+SCREENSAVER_PAGES = 4                 # Uhrzeit, Temperatur, Feuchte, IAQ
 
 
 def _glyph_cols(ch):
@@ -307,4 +303,4 @@ def draw_screensaver():
     _big_text(label, (lcd.width - _text_w(label, 1)) // 2, _SS_LABEL_Y, colors.LIGHTGREY, 1)
     lcd.show()
 
-# EOF 2026-11-11
+# EOF 2026-11-18

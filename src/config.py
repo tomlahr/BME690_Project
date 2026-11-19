@@ -102,7 +102,7 @@ MODE_NAMES = ("Klima", "Gas / IAQ", "Min / Max", "WLAN", "System")
 
 # ── Bildschirmschoner ──────────────────────────────────────
 # Wechselseite: Uhrzeit, Temperatur, Luftfeuchte, Luftqualitaet - ein Wert gross.
-SCREENSAVER_IDLE_MS = 3 * 60 * 1000   # 3 Minuten ohne Tastendruck
+SCREENSAVER_IDLE_MS = 2 * 60 * 1000   # 2 Minuten ohne Tastendruck
 SCREENSAVER_BRIGHTNESS = BRIGHTNESS_LEVELS[0]   # niedrigste Stufe (300 von 1000)
 SCREENSAVER_PAGE_MS = 4000             # naechste Seite nach 4 s
 SCREENSAVER_REDRAW_MS = 2000           # Wert auf der Seite auffrischen
@@ -119,9 +119,9 @@ WIFI_RETRY_MS = 15000
 WIFI_RESET_AFTER = 3
 # Laendercode steht in secrets.py (WIFI_COUNTRY); fehlt er dort, gilt dieser.
 WIFI_COUNTRY_DEFAULT = "DE"
-# WLAN beim Start automatisch einschalten (z. B. im geschlossenen Balkon-
-# Gehaeuse, damit das Geraet nach einem Stromausfall ohne Tastendruck
-# wieder online kommt). Auskommentiert = WLAN startet aus, CTRL schaltet ein.
+# WLAN beim Start einschalten, damit das Geraet nach einem Stromausfall
+# ohne Tastendruck wieder online kommt. False = WLAN startet aus, CTRL
+# schaltet ein.
 WIFI_AUTOSTART = True
 # WLAN-Nachtabschaltung (wifi_schedule.py, identisch beim Enviro+). Die
 # FRITZ!Box schaltet ihr WLAN 00:10-05:55 ab; der Pico trennt sich vorher
@@ -135,4 +135,33 @@ NTP_HOSTS = ("pool.ntp.org",)
 NTP_RESYNC_MS = 6 * 3600 * 1000             # Zeitabgleich alle 6 h
 NTP_RETRY_MS = 60 * 1000                    # nach Fehlschlag in 1 min erneut
 
-# EOF 2026-11-10
+# ── Dienste ein/aus ─────────────────────────────────────────
+# Alle unabhaengig schaltbar. WLAN und NTP (Zeitplan, Uhrzeit im
+# Bildschirmschoner) laufen auch, wenn Web und MQTT aus sind.
+# False = kein Dashboard, kein /data; web.py wird dann gar nicht geladen.
+WEB_ENABLED = True     # Web-Dashboard auf Port 80 (/ und /data)
+LOG_ENABLED = True     # Stundenlog log.csv im Flash (hourlog.py)
+# MQTT_ENABLED steht im MQTT-Block direkt darunter.
+
+# ── Betriebslog (hourlog.py) ───────────────────────────────
+LOG_FILE = "log.csv"         # eine Zeile pro Stunde, Spalten siehe hourlog.py
+LOG_MAX_BYTES = 24000        # darueber: log.csv -> log.csv.old (alte .old faellt weg)
+
+# ── MQTT / Home Assistant (mqtt.py) ────────────────────────
+# Zugangsdaten (MQTT_USER, MQTT_PASSWORD) stehen in secrets.py.
+# Nachts (WLAN aus) wird nicht gesendet; die Luecke bleibt bewusst offen,
+# weil Home Assistant per MQTT keine rueckdatierten Werte annimmt.
+MQTT_ENABLED = True               # Home-Assistant-Anbindung per MQTT
+MQTT_HOST = "192.168.178.25"       # Home Assistant / Mosquitto
+MQTT_PORT = 1883
+MQTT_NODE_ID = "pico_bme690"       # je Geraet eindeutig: Client-ID, Topics, unique_id
+MQTT_DEVICE_NAME = "pico_bme690"       # Geraetename in HA, Basis der Entitaets-IDs
+MQTT_DEVICE_MODEL = "Pico 2 W + BME690"
+MQTT_DISCOVERY_PREFIX = "homeassistant"
+MQTT_PUBLISH_MS = 60_000           # Zustand alle 60 s (nicht jeden 3-s-Messtakt)
+MQTT_KEEPALIVE_S = 120             # Broker trennt nach 1,5 x = 180 s Stille
+MQTT_TIMEOUT_S = 2                 # Socket-Timeout fuer Verbinden und Senden
+MQTT_RETRY_MS = 15_000             # Wartezeit nach Fehlschlag, verdoppelt sich ...
+MQTT_RETRY_MAX_MS = 300_000        # ... bis zu dieser Grenze
+
+# EOF 2026-11-19

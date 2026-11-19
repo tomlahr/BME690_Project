@@ -15,12 +15,12 @@ import display
 import wifi
 import wifi_schedule
 import iaq
+import mqtt
+import hourlog
 
 # ── Tasten ─────────────────────────────────────────────────────
-# Paket 1 (2026-09-23): Flankenerkennung statt Warteschleife. Die alte
-# pressed()-Funktion wartete, solange eine Taste gehalten wurde - in der
-# Zeit standen Sensor, Display und Webserver. Jetzt: genau ein Ereignis
-# pro Druck, kein Warten.
+# Flankenerkennung statt Warteschleife: genau ein Ereignis pro Druck, eine
+# gehaltene Taste blockiert Sensor, Display und Webserver nicht.
 class Key:
     def __init__(self, pin, debounce_ms=25):
         self.pin = Pin(pin, Pin.IN, Pin.PULL_UP)
@@ -49,6 +49,10 @@ KEY_A = Key(15)
 KEY_B = Key(17)
 
 
+def _backlight():
+    display.lcd.backlight(config.BRIGHTNESS_LEVELS[state.brightness_idx])
+
+
 # ── Initialisierung ─────────────────────────────────────────────
 display.init()
 
@@ -56,102 +60,88 @@ i2c = PimoroniI2C(sda=config.I2C_SDA, scl=config.I2C_SCL)
 sensors.init(i2c)
 state.iaq = iaq.IAQ()   # laedt die Baseline vom Flash, falls vorhanden
 
-state.boot_time = time.ticks_ms()
 state.min_mem_free = gc.mem_free()
+_backlight()            # Starthelligkeit: BRIGHTNESS_LEVELS[1]
 
-# Starthelligkeit: 600
-display.lcd.backlight(config.BRIGHTNESS_LEVELS[state.brightness_idx])
-
-last_sensor = time.ticks_add(state.boot_time, -config.SENSOR_INTERVAL_MS)
-last_display = time.ticks_add(state.boot_time, -config.DISPLAY_INTERVAL_MS)
-last_history = time.ticks_add(state.boot_time, -config.HISTORY_INTERVAL_MS)
-last_iaq_save = state.boot_time
-last_page = state.boot_time
+t0 = time.ticks_ms()
+last_sensor = time.ticks_add(t0, -config.SENSOR_INTERVAL_MS)
+last_display = time.ticks_add(t0, -config.DISPLAY_INTERVAL_MS)
+last_history = time.ticks_add(t0, -config.HISTORY_INTERVAL_MS)
+last_iaq_save = t0
+last_page = t0
+state.last_activity = t0
 
 # Frueher sammeln statt erst im Notfall
 gc.threshold(gc.mem_free() // 4 + gc.mem_alloc())
-
-state.last_activity = state.boot_time
 
 sched = wifi_schedule.WifiSchedule(config.WIFI_OFF_FROM, config.WIFI_OFF_UNTIL,
                                    config.NTP_HOSTS, config.NTP_RESYNC_MS,
                                    config.NTP_RETRY_MS)
 state.sched = sched      # Uhrzeit fuer den Bildschirmschoner
 
-# Optional: WLAN direkt einschalten (config.WIFI_AUTOSTART)
-if getattr(config, "WIFI_AUTOSTART", False):
+hourlog.init()           # schreibt "# Start;<Reset-Grund>" ins Log
+
+if config.WIFI_AUTOSTART:
     wifi.toggle_wifi()
 
 # ── Hauptschleife ───────────────────────────────────────────────
 while True:
+    now = time.ticks_ms()
+
     # Alle Tasten JEDE Runde abfragen - sonst verpasst eine Taste, die durch
     # "or"-Kurzschluss uebersprungen wird, ihre Flanke.
-    k_a, k_right = KEY_A.pressed(), KEY_RIGHT.pressed()
-    k_b, k_left = KEY_B.pressed(), KEY_LEFT.pressed()
-    k_up, k_down = KEY_UP.pressed(), KEY_DOWN.pressed()
+    k_next = KEY_A.pressed() | KEY_RIGHT.pressed()
+    k_prev = KEY_B.pressed() | KEY_LEFT.pressed()
+    k_up = KEY_UP.pressed()
+    k_down = KEY_DOWN.pressed()
     k_ctrl = KEY_CTRL.pressed()
 
-    any_key = False
-
-    if k_a or k_right:
-        any_key = True
-        if not state.screensaver_active:
+    if k_next or k_prev or k_up or k_down or k_ctrl:
+        state.last_activity = now
+        if state.screensaver_active:          # erster Tastendruck weckt nur
+            state.screensaver_active = False
+            _backlight()
+        elif k_next:
             state.mode = (state.mode + 1) % len(config.MODE_NAMES)
-            last_display = time.ticks_add(time.ticks_ms(), -config.DISPLAY_INTERVAL_MS)
-
-    elif k_b or k_left:
-        any_key = True
-        if not state.screensaver_active:
+        elif k_prev:
             state.mode = (state.mode - 1) % len(config.MODE_NAMES)
-            last_display = time.ticks_add(time.ticks_ms(), -config.DISPLAY_INTERVAL_MS)
-
-    elif k_up:
-        any_key = True
-        if not state.screensaver_active:
-            state.brightness_idx = min(
-                state.brightness_idx + 1,
-                len(config.BRIGHTNESS_LEVELS) - 1
-            )
-            display.lcd.backlight(config.BRIGHTNESS_LEVELS[state.brightness_idx])
-
-    elif k_down:
-        any_key = True
-        if not state.screensaver_active:
+        elif k_up:
+            state.brightness_idx = min(state.brightness_idx + 1,
+                                       len(config.BRIGHTNESS_LEVELS) - 1)
+            _backlight()
+        elif k_down:
             state.brightness_idx = max(state.brightness_idx - 1, 0)
-            display.lcd.backlight(config.BRIGHTNESS_LEVELS[state.brightness_idx])
-
-    elif k_ctrl:
-        any_key = True
-        if not state.screensaver_active:
+            _backlight()
+        else:
+            mqtt.goodbye()      # "offline" melden, falls das WLAN gleich ausgeht
             wifi.toggle_wifi()
             sched.manual()      # Eingriff bis zum naechsten Schaltpunkt
-            last_display = time.ticks_add(time.ticks_ms(), -config.DISPLAY_INTERVAL_MS)
-
-    if any_key:
-        state.last_activity = time.ticks_ms()
-        if state.screensaver_active:
-            state.screensaver_active = False
-            display.lcd.backlight(config.BRIGHTNESS_LEVELS[state.brightness_idx])
-            last_display = time.ticks_add(time.ticks_ms(), -config.DISPLAY_INTERVAL_MS)
+        last_display = time.ticks_add(now, -config.DISPLAY_INTERVAL_MS)   # sofort zeichnen
 
     wifi.poll()          # Verbindungsaufbau / Wiederverbindung
     wifi.poll_server()
+    mqtt.poll(wifi.connected())
 
+    # update() meldet "on"/"off" nur, wenn der Sollzustand vom Istzustand
+    # abweicht - umschalten genuegt also.
     action = sched.update(state.wifi_active, wifi.connected())
-    if (action == "off" and state.wifi_active) or (action == "on" and not state.wifi_active):
+    if action:
+        if action == "off":
+            mqtt.goodbye()
         wifi.toggle_wifi()
 
-    now = time.ticks_ms()
     history.tick_uptime()
 
     free = gc.mem_free()
     if free < state.min_mem_free:
         state.min_mem_free = free
+    hourlog.note_loop(free)
+    hourlog.tick()
 
     if time.ticks_diff(now, last_sensor) >= config.SENSOR_INTERVAL_MS:
         last_sensor = now
-        sensors.update_sensor()
-        sensors.update_selftest()
+        sensors.update_selftest(sensors.update_sensor())
+        hourlog.add_sample(state.selftest_results[-1])
 
     if time.ticks_diff(now, last_history) >= config.HISTORY_INTERVAL_MS:
         last_history = now
@@ -161,7 +151,8 @@ while True:
         last_iaq_save = now
         state.iaq.save()
 
-    if not state.screensaver_active and time.ticks_diff(now, state.last_activity) >= config.SCREENSAVER_IDLE_MS:
+    if not state.screensaver_active and \
+       time.ticks_diff(now, state.last_activity) >= config.SCREENSAVER_IDLE_MS:
         state.screensaver_active = True
         state.screensaver_page = 0
         last_page = now
@@ -171,16 +162,15 @@ while True:
     if state.screensaver_active:
         if time.ticks_diff(now, last_page) >= config.SCREENSAVER_PAGE_MS:
             last_page = now
-            state.screensaver_page = (state.screensaver_page + 1) % 4
+            state.screensaver_page = (state.screensaver_page + 1) % display.SCREENSAVER_PAGES
             last_display = time.ticks_add(now, -config.SCREENSAVER_REDRAW_MS)
         if time.ticks_diff(now, last_display) >= config.SCREENSAVER_REDRAW_MS:
             last_display = now
             display.draw_screensaver()
-    else:
-        if time.ticks_diff(now, last_display) >= config.DISPLAY_INTERVAL_MS:
-            last_display = now
-            display.draw()
+    elif time.ticks_diff(now, last_display) >= config.DISPLAY_INTERVAL_MS:
+        last_display = now
+        display.draw()
 
     time.sleep_ms(config.LOOP_SLEEP_MS)
 
-# EOF 2026-11-11
+# EOF 2026-11-19
