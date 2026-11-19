@@ -57,7 +57,11 @@ _RUN = 2
 _client = None
 _phase = _DISCOVERY
 _idx = 0
-_t_retry = time.ticks_ms()
+# Ende der Wartezeit nach einem Fehlschlag, None = keine Wartezeit. Bewusst
+# kein alter Zeitstempel: ticks_diff() ist nur ~6 Tage eindeutig - nach
+# laengerem fehlerfreiem Betrieb haette der Vergleich sonst tagelang
+# "noch warten" gemeldet.
+_t_retry = None
 _t_pub = 0
 _backoff = config.MQTT_RETRY_MS
 _n_ok = 0        # gesendete Zustaende       } fuer hourlog.py,
@@ -181,7 +185,7 @@ def _state_payload():
 
 def poll(linked):
     """Jede Schleifenrunde aufrufen, linked = wifi.connected()."""
-    global _phase, _idx, _t_pub, _n_ok
+    global _phase, _idx, _t_pub, _n_ok, _t_retry
     if not _enabled():
         return
     if not linked:
@@ -191,8 +195,10 @@ def poll(linked):
 
     now = time.ticks_ms()
     if _client is None:
-        if time.ticks_diff(now, _t_retry) < 0:
-            return
+        if _t_retry is not None:
+            if time.ticks_diff(now, _t_retry) < 0:
+                return
+            _t_retry = None
         try:
             _connect()
         except Exception as error:
